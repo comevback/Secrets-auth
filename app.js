@@ -6,6 +6,7 @@ import mongoose from "mongoose";
 import encrypt from "mongoose-encryption";
 import ejs from "ejs";
 import {mongoUrl} from "./config.js"
+import md5 from "md5";
 
 dotenv.config();
 const app = express();
@@ -21,7 +22,7 @@ const UserSchema = new mongoose.Schema({
     secrets: [String]
 });
 
-UserSchema.plugin(encrypt, { secret: process.env.SECRET, encryptedFields: ["password"]});
+//UserSchema.plugin(encrypt, { secret: process.env.SECRET, encryptedFields: ["password"]});
 
 const Users = mongoose.model("user", UserSchema);
 
@@ -46,7 +47,7 @@ app.post("/register", async(req, res) => {
         if(!exist){
             const user = new Users({
                 username: username,
-                password: password
+                password: md5(password)
             });
             user.save();
             res.redirect("/login");
