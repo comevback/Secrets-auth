@@ -123,9 +123,31 @@ app.get("/register", (req,res) => {
 });
 
 app.get("/secrets", (req, res) => {
-    if(req.isAuthenticated()){
-        res.render("secrets.ejs");
-    }else{
+    // if(req.isAuthenticated()){
+    //     Users.find({secrets: {$exists:true}}).then((err, foundUsers) => {
+    //         if(err){
+    //             console.log(err);
+    //         }else{
+    //             if(foundUsers){
+    //                 res.render("secrets.ejs", {userwithSecrets: foundUsers});
+    //             }
+    //         }
+    //     });
+    //     res.render("secrets.ejs");
+    // }else{
+    //     res.redirect("/login");
+    // }
+    if (req.isAuthenticated()) {
+        Users.find({ secrets: { $exists: true } })
+            .then((foundUsers) => {
+                if (foundUsers) {
+                    res.render("secrets.ejs", { userwithSecrets: foundUsers });
+                }
+            })
+            .catch((err) => {
+                console.log(err);
+            });
+    } else {
         res.redirect("/login");
     }
 });
@@ -157,12 +179,16 @@ app.get("/submit", (req, res) => {
 });
 
 app.post("/submit", async(req, res) => {
-    console.log(req.user);
-    const secret = req.body.secret;
+    //console.log(req.user);
+    //const secret = req.body.secret;
     //console.log(req.body);
-    console.log(secret);
+    //console.log(secret);
     try{
-
+        const user = await Users.findById(req.user.id);
+        console.log(user);
+        user.secrets.push(req.body.secret);
+        await user.save();
+        res.redirect("/secrets");
     }catch(err){
         console.log(err);
     }
