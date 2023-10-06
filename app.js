@@ -5,26 +5,72 @@ import bodyParser from "body-parser";
 import mongoose from "mongoose";
 import encrypt from "mongoose-encryption";
 import ejs from "ejs";
-import {mongoUrl} from "./config.js"
 import md5 from "md5";
+import bcrypt from "bcrypt";
+import session from "express-session";
+import passport from "passport";
+import passportLocalMongoose from "passport-local-mongoose";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
+import findOrCreate from "mongoose-findorcreate";
 
 dotenv.config();
 const app = express();
 const port = 3000;
+const saltRounds = 10;
 app.set("view engine", "ejs");
 app.use(bodyParser.urlencoded({extended:true}));
 app.use(express.static("public"));
 
-mongoose.connect(mongoUrl).then(() => {console.log("connected to the DB.");}).catch((err) => {console.log(err);});
-const UserSchema = new mongoose.Schema({
+app.use(session({
+    secret: "thisisasecret",
+    resave: false,
+    saveUninitialized: false,
+}));
+app.use(passport.initialize());
+app.use(passport.session());
+
+mongoose.connect(process.env.MongoURL).then(() => {console.log("connected to the DB.");}).catch((err) => {console.log(err);});
+const UserSchema = new mongoose.Schema({ 
     username: String,
     password: String,
-    secrets: [String]
+    secrets: [String],
+    googleId: String
 });
+UserSchema.plugin(passportLocalMongoose);
+UserSchema.plugin(findOrCreate);
 
 //UserSchema.plugin(encrypt, { secret: process.env.SECRET, encryptedFields: ["password"]});
 
 const Users = mongoose.model("user", UserSchema);
+passport.use(Users.createStrategy());
+passport.serializeUser(function(user, cb) {
+    process.nextTick(function() {
+      return cb(null, {
+        id: user.id,
+        username: user.username,
+        picture: user.picture
+      });
+    });
+  });
+  
+  passport.deserializeUser(function(user, cb) {
+    process.nextTick(function() {
+      return cb(null, user);
+    });
+  });
+
+passport.use(new GoogleStrategy({
+    clientID: process.env.CLIENT_ID,
+    clientSecret: process.env.CLIENT_SECRET,
+    callbackURL: "http://localhost:3000/auth/google/secrets"
+},
+    function(accessToken, refreshToken, profile, cb) {
+        console.log(profile);
+        Users.findOrCreate({ googleId: profile.id }, function (err, user) {
+        return cb(err, user);
+        });
+    }
+));
 
 app.listen(port, () => {
     console.log(`Server is listening on the port ${port}`);
@@ -38,55 +84,69 @@ app.get("/login", (req,res) => {
     res.render("login.ejs");
 });
 
-app.post("/register", async(req, res) => {
+app.get('/auth/google',
+  passport.authenticate('google', { scope: ['profile'] }));
+
+app.get('/auth/google/secrets', 
+  passport.authenticate('google', { failureRedirect: '/login' }),
+  function(req, res) {
+    // Successful authentication, redirect home.
+    res.redirect('/');
+  });
+
+app.get("/logout", (req, res, next) => {
+    req.logOut(function(err){
+        if(err){
+            return next(err);
+        }
+        res.redirect("/secrets");
+    });
+});
+
+app.post("/register", (req, res) => {
     const username = req.body.username;
     const password = req.body.password;
-    console.log(`username: ${username} \npassword: ${password}`);
-    try{
-        const exist = await Users.findOne({username:username});
-        if(!exist){
-            const user = new Users({
-                username: username,
-                password: md5(password)
-            });
-            user.save();
-            res.redirect("/login");
+    Users.register({username: username}, password, function(err, user){
+        if(err){
+            console.log(err);
+            res.redirect("/register");
         }else{
-            console.log("User already exist.");
-            res.status(400).send("User already exist.")
+            passport.authenticate("local")(req, res, function(){
+                res.redirect("/secrets")
+            })
         }
-    }catch(err){
-        console.log(err);
-    }
+    })
 });
 
 app.get("/register", (req,res) => {
     res.render("register.ejs");
 });
 
-app.post("/login", async(req, res) => {
-    const username = req.body.username;
-    const password = req.body.password;
-    console.log(`username: ${username} \npassword: ${password}.`);
-    try{
-        const user = await Users.findOne( {username:username});
-        if (!user){
-            console.log("User not exist.")
-        }
-        console.log(user);
-        if(user.password === password){
-            res.redirect("/secrets");
-        }else{
-            res.status(400).send("password is not correct.");
-        }
-    }catch(err){
-        console.log(err);
+app.get("/secrets", (req, res) => {
+    if(req.isAuthenticated()){
+        res.render("secrets.ejs");
+    }else{
+        res.redirect("/login");
     }
 });
 
-app.get("/secrets", (req, res) => {
-    res.render("secrets.ejs");
-});
+app.post("/login", (req, res) => {
+    const user = new Users({
+        username: req.body.username,
+        password: req.body.password
+    });
+    
+    req.login(user, function(err){
+        if(err){
+            console.log(err);
+        }else{
+            passport.authenticate("local", {failureRedirect: '/login', failureMessage: true})(req, res, function(){
+                res.redirect("/secrets");
+            })
+        }
+    });
+
+}); 
 
 app.get("/submit", (req, res) => {
     res.render("submit.ejs");
