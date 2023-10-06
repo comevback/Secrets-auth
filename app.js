@@ -91,7 +91,7 @@ app.get('/auth/google/secrets',
   passport.authenticate('google', { failureRedirect: '/login' }),
   function(req, res) {
     // Successful authentication, redirect home.
-    res.redirect('/');
+    res.redirect('/secrets');
   });
 
 app.get("/logout", (req, res, next) => {
@@ -99,7 +99,7 @@ app.get("/logout", (req, res, next) => {
         if(err){
             return next(err);
         }
-        res.redirect("/secrets");
+        res.redirect("/");
     });
 });
 
@@ -135,12 +135,12 @@ app.post("/login", (req, res) => {
         username: req.body.username,
         password: req.body.password
     });
-    
     req.login(user, function(err){
         if(err){
             console.log(err);
         }else{
             passport.authenticate("local", {failureRedirect: '/login', failureMessage: true})(req, res, function(){
+                console.log("success login");
                 res.redirect("/secrets");
             })
         }
@@ -149,12 +149,17 @@ app.post("/login", (req, res) => {
 }); 
 
 app.get("/submit", (req, res) => {
-    res.render("submit.ejs");
+    if(req.isAuthenticated()){
+        res.render("submit.ejs");
+    }else{
+        res.redirect("/login");
+    }
 });
 
 app.post("/submit", async(req, res) => {
+    console.log(req.user);
     const secret = req.body.secret;
-    console.log(req.body);
+    //console.log(req.body);
     console.log(secret);
     try{
 
